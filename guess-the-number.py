@@ -2,6 +2,7 @@
 
 import random
 import sys
+import time
 
 def guess_the_number(maximum):
   answer = random.randint(1, maximum)
@@ -11,7 +12,12 @@ def guess_the_number(maximum):
     num_guesses += 1
     print(f"Guess #{num_guesses}: Enter a number between 1 and {maximum}:")
     try:
-      input = int(sys.stdin.readline().strip())
+      input_str = sys.stdin.readline().strip()
+      if input_str == "quit":
+        print("Got it, good luck next time!")
+        time.sleep(1)
+        sys.exit(0)
+      input = int(input_str)
     except ValueError:
       print(f"That's not a number. Try again!")
       continue
@@ -39,6 +45,10 @@ while maximum is None:
   print("What is the maximum number you want to use for guessing? Hit \"Return\" for 100:")
   try:
     input_str = sys.stdin.readline().strip()
+    if input_str == "quit":
+      print("Got it, good luck next time!")
+      time.sleep(1)
+      sys.exit(0)
     if input_str == "":
       maximum = 100
     else:

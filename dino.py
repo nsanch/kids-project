@@ -5,6 +5,56 @@ import threading
 import time
 import random
 import sys
+import os
+import json
+
+class SavedState(object):
+  VERSION = 1
+
+  def __init__(self):
+    self.fname = os.path.join(os.getenv("HOME"), ".dino")
+    self.load()
+    self.save()
+
+  def load(self):
+    default_new_state = { "high_score": 0, "version": 1 }
+    if os.path.exists(self.fname):
+      with open(self.fname, "r") as f:
+        input = f.read()
+        try:
+          self.state = json.loads(input)
+
+          if self.state is None or len(self.state) == 0:
+            self.state = default_new_state
+
+          if self.state.get("version", 0) != SavedState.VERSION:
+            self.state = self.upgrade(self.state)
+        except json.JSONDecodeError:
+          self.state = default_new_state
+    else:
+      self.state = default_new_state
+
+  def upgrade(self, old_state):
+    if old_state.get("version", 0) < SavedState.VERSION:
+      new_state = {}
+      new_state["version"] = SavedState.VERSION
+      new_state["high_score"] = old_state["high_score"] // 10
+      return new_state
+    return old_state
+
+  def save(self):
+    with open(self.fname, "w") as f:
+      json.dump(self.state, f)
+
+  def maybe_update_high_score(self, newscore):
+    if newscore > self.high_score():
+      self.state["high_score"] = newscore
+      self.save()
+      return True
+    return False
+
+  def high_score(self):
+    return self.state.get("high_score", 0)
 
 class Empty(object):
   def __init__(self):
@@ -36,6 +86,7 @@ class Dino(object):
       stdscr.addch(curses.LINES - 1 - (self.height + h), i, self.chars[h])
 
   def jump(self): 
+    # 1 to N-1, N, N, N, N-1 to 1
     if self.upcoming_heights is None:
       self.upcoming_heights = list(range(1, len(self.chars))) + (3*[len(self.chars)]) + list(range(len(self.chars), -1, -1))
 
@@ -58,6 +109,9 @@ class Obstacle(object):
   def y_positions(self):
     pass
 
+  def difficulty(self):
+    pass
+
 class Tree(Obstacle):
   CHARS = "TTT"
   MEGA_CHARS = "MT" * 5
@@ -74,6 +128,9 @@ class Tree(Obstacle):
 
   def y_positions(self):
     return range(len(self.chars))
+  
+  def difficulty(self):
+    return 3 * len(self.chars)
   
 class Bird(Obstacle):
   FLAPS = ["W", "w"]
@@ -97,6 +154,9 @@ class Bird(Obstacle):
   
   def y_positions(self):
     return [self.y]
+  
+  def difficulty(self):
+    return self.y * 5
 
 class Game(object):
   MIN_DIST_BETWEEEN_TREES = 30
@@ -114,6 +174,7 @@ class Game(object):
     self.game_state = Game.RUNNING
     self.points = 0
     self.lock = threading.Lock()
+    self.saved_state = SavedState()
     for i in range(curses.COLS-1 - Game.DINO_POS - 1):
       self.next_n_columns.append(self.next_up())
 
@@ -145,7 +206,7 @@ class Game(object):
   def tick(self):
     if self.game_over(): 
       return False
-
+    
     self.next_n_columns.pop(0)
     closest = self.next_n_columns[Game.DINO_POS + 1]
     if isinstance(closest, Obstacle):
@@ -155,7 +216,7 @@ class Game(object):
         self.game_state = Game.LOST
         return False
       else:
-        self.points += 10
+        self.points += closest.difficulty()
     else:
       self.points += 1
     
@@ -178,7 +239,11 @@ class Game(object):
         stdscr.addstr(5, 0, "Game paused. Press 'p' to continue.")
         stdscr.refresh()
       elif not self.tick():
-        stdscr.addstr(5, 0, "Game over! Press 'e' to exit or press r to restart.")
+        if self.saved_state.maybe_update_high_score(self.points):
+          stdscr.addstr(5, 0, "NEW HIGH SCORE! Press 'e' to exit or press r to restart.")
+        else:
+          stdscr.addstr(5, 0, "Game over! Press 'e' to exit or press r to restart.")
+
         stdscr.refresh()
         return
       
@@ -189,7 +254,8 @@ class Game(object):
       self.dino.render(stdscr, Game.DINO_POS)
 
       stdscr.addstr(0, 0, f"Score: {self.points}")
-      stdscr.addstr(1, 0, "Type 'e' to exit, Space to jump, 'm' to mega. 'p' to pause.")
+      stdscr.addstr(1, 0, f"High Score: {self.saved_state.high_score()}")
+      stdscr.addstr(2, 0, "Type 'e' to exit, Space to jump, 'm' to mega. 'p' to pause.")
       stdscr.refresh()
 
       def task():
@@ -217,6 +283,7 @@ class Game(object):
         self.dino.mega()
       elif k == "e":
         self.game_state = Game.QUIT
+        self.saved_state.maybe_update_high_score(self.points)
     finally:
       self.release_lock()
 
