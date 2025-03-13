@@ -155,6 +155,7 @@ class Game(object):
     self.lock = threading.Lock()
     self.score = (0, 0)
     self.status_msg = None
+    self.speed_boost = 0
 
   def acquire_lock(self):
     self.lock.acquire()
@@ -176,8 +177,10 @@ class Game(object):
   
 
   def maybe_move_left_paddle(self):
+    cpu_advantage_in_score = self.score[0] - self.score[1]
+
     # we get a 1 in 6 chance of moving the paddle when the ball is moving towards us
-    if random.randint(0, 5) == 0 and self.ball.velocity[1] < 0:
+    if random.randint(0, 5 + cpu_advantage_in_score) == 0 and self.ball.velocity[1] < 0:
       # if the ball is above the paddle, move up.
       # if the ball is below the paddle, move down.
       ball_pos = self.ball.position
@@ -188,8 +191,7 @@ class Game(object):
         self.left_paddle.down()
 
   def debug_msg(self):
-    return ""
-    #return f"Ball: {self.ball.position}, Left Paddle: {self.left_paddle.velocity}, Right Paddle: {self.right_paddle.velocity}"
+    return f"Speed Boost: {self.speed_boost}"
 
   def tick(self):
     if self.game_over():
@@ -209,6 +211,18 @@ class Game(object):
     
     self.maybe_move_left_paddle()
     return Game.CONTINUING
+  
+  def render(self, stdscr):
+    stdscr.clear()
+    for item in self.items:
+      item.render(stdscr)
+    stdscr.addstr(0, 0, f"CPU: {self.score[0]}")
+    stdscr.addstr(0, curses.COLS - 13, f"Player 1: {self.score[1]}")
+    if self.status_msg is not None:
+      stdscr.addstr(curses.LINES // 2, (curses.COLS - len(self.status_msg)) // 2, self.status_msg)      
+    stdscr.addstr(2, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up to move paddle up, down to move down.")
+    stdscr.addstr(4, 0, self.debug_msg())
+    stdscr.refresh()
 
   def refresh_window(self, stdscr):
     try:
@@ -217,33 +231,24 @@ class Game(object):
       if self.game_over():
         return
       
-      if self.game_state not in [Game.PAUSED, Game.WAITING_FOR_NEXT_POINT]:
+      if self.game_state == Game.RUNNING:
         tick_result = self.tick()
         if tick_result == Game.RIGHT_POINT:
-          if self.score[1] == 10:
-            self.status_msg = "You win!"
+          if self.score[1] == 3:
+            self.status_msg = "You win! Hit 'r' to restart or 'e' to exit."
             self.game_state = Game.WON
           else:
-            self.status_msg = "Point to you!!  Hit 'p' to continue."
+            self.status_msg = f"Point to you!!  The score is {self.score[0]}-{self.score[1]}. Hit 'p' to continue."
             self.game_state = Game.WAITING_FOR_NEXT_POINT
         elif tick_result == Game.LEFT_POINT:
-          if self.score[0] == 10:
-            self.status_msg = "Oh no, the computer wins. :( :("
+          if self.score[0] == 3:
+            self.status_msg = "Oh no, the computer wins. :( :( Hit 'r' to restart or 'e' to exit."
             self.game_state = Game.LOST
           else:
-            self.status_msg = "Point to the computer! Hit 'p' to continue."
+            self.status_msg = f"Point to the computer! The score is {self.score[0]}-{self.score[1]}. Hit 'p' to continue."
             self.game_state = Game.WAITING_FOR_NEXT_POINT
         
-      stdscr.clear()
-      for item in self.items:
-        item.render(stdscr)
-      stdscr.addstr(0, 0, f"CPU: {self.score[0]}")
-      stdscr.addstr(0, curses.COLS - 13, f"Player 1: {self.score[1]}")
-      if self.status_msg is not None:
-        stdscr.addstr(curses.LINES // 2, (curses.COLS - len(self.status_msg)) // 2, self.status_msg)      
-      stdscr.addstr(2, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up to move paddle up, down to move down.")
-      stdscr.addstr(4, 0, self.debug_msg())
-      stdscr.refresh()
+      self.render(stdscr)
 
       def task():
         self.refresh_window(stdscr)
@@ -254,7 +259,20 @@ class Game(object):
       self.release_lock()
 
   def speed(self):
-    return 0.1
+    total_score = self.score[0] + self.score[1]
+    base_speed = 0.1
+    adjustment_by_score = 0.005*total_score
+    boost_multiplier = 1
+    boost_denominator = 1
+    if self.speed_boost < 0:
+      boost_multiplier = -1 * self.speed_boost
+    else:
+      boost_denominator = 1 + self.speed_boost
+    max_speed = 0.02
+    min_speed = 0.5
+
+    return max(base_speed, (base_speed - adjustment_by_score) * boost_multiplier) / boost_denominator
+    return max(0.1 - (total_score * 0.005), 0.02) / (1 + self.speed_boost)
   
   def accept_keypress(self, k, stdscr):
     try:
@@ -272,6 +290,10 @@ class Game(object):
         self.right_paddle.down()
       elif k == "e":
         self.game_state = Game.QUIT
+      elif k == "f":
+        self.speed_boost = min(5, 1 + self.speed_boost)
+      elif k == "s":
+        self.speed_boost = max(0, self.speed_boost - 1)
     finally:
       self.release_lock()
 
