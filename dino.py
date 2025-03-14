@@ -2,9 +2,7 @@
 
 import curses
 import threading
-import time
 import random
-import sys
 import os
 import json
 
@@ -12,7 +10,7 @@ class SavedState(object):
   VERSION = 1
 
   def __init__(self):
-    self.fname = os.path.join(os.getenv("HOME"), ".dino")
+    self.fname: str = os.path.join(os.getenv("HOME"), ".dino")
     self.load()
     self.save()
 
@@ -96,7 +94,7 @@ class Dino(object):
     else:
       self.chars = Dino.CHARS
 
-  def y_positions(self):
+  def y_positions(self) -> list[tuple[int, int]]:
     return list(range(self.height, self.height + len(self.chars), 1))
 
 class Obstacle(object):
@@ -152,7 +150,7 @@ class Bird(Obstacle):
     stdscr.addch(curses.LINES - 1 - self.y, i, self.chars()) 
     stdscr.addch(curses.LINES - 1, i, ".")
   
-  def y_positions(self):
+  def y_positions(self) -> list[tuple[int, int]]:
     return [self.y]
   
   def difficulty(self):

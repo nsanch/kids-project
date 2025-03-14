@@ -11,19 +11,19 @@ import json
 
 class DebugLogger(object):
   def __init__(self):
-    self.log = []
+    self.log: list[str] = []
 
-  def add(self, msg):
+  def add(self, msg: str) -> None:
     self.log.append(msg)
     if len(self.log) > 3:
       self.log = self.log[-3:]
 
-  def get_log_str(self):
+  def get_log_str(self) -> str:
     return '|'.join(self.log)
 
-debugger = DebugLogger()
+debugger: DebugLogger = DebugLogger()
 
-def sign(x):
+def sign(x: int) -> int:
   if x < 0:
     return -1
   elif x > 0:
@@ -34,36 +34,39 @@ class Collidable(object):
   def __init__(self):
     pass
 
-  def addch(self, stdscr, pos, ch):
+  def addch(self, stdscr: curses.window, pos: tuple[int, int], ch: str) -> None:
     # 0,0 in the game is y_max,0 in the rendering.
     game_y = pos[0]
     screen_y = curses.LINES - game_y - 1
     stdscr.addch(screen_y, pos[1], ch)
 
-  def addstr(self, stdscr, pos, s):
+  def addstr(self, stdscr: curses.window, pos: tuple[int, int], s: str) -> None:
     for ch, i in zip(s, range(len(s))):
       self.addch(stdscr, (pos[0], pos[1] + i), ch)
 
-  def addstr_vert(self, stdscr, pos, s):
+  def addstr_vert(self, stdscr: curses.window, pos: tuple[int, int], s: str) -> None:
     for ch, i in zip(s, range(len(s))):
       self.addch(stdscr, (pos[0] + (len(s) - 1) - i, pos[1]), ch)
 
-  def tick(self, game):
+  def tick(self, game) -> None:
     pass
 
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window) -> None:
     pass
 
-  def collide(self, other_object):
+  def collide(self, other_object) -> None:
     pass
+
+  def kills_player_on_collision(self) -> bool:
+    return False
 
 
 class MovableObject(Collidable):
-  def __init__(self, position, velocity):
+  def __init__(self, position: tuple[int, int], velocity: tuple[int, int]):
     self.position = position
     self.velocity = velocity
 
-  def adjust_velocity(self, new_abs_x=None, new_abs_y=None, relative_x=None, relative_y=None):
+  def adjust_velocity(self, new_abs_x: int|None=None, new_abs_y: int|None=None, relative_x: int|None=None, relative_y: int|None=None):
     if new_abs_y is not None:
       self.velocity = (new_abs_y, self.velocity[1])
     if new_abs_x is not None:
@@ -73,30 +76,27 @@ class MovableObject(Collidable):
     if relative_x is not None:
       self.velocity = (self.velocity[0], self.velocity[1] + relative_x)
 
-    # clunky but simple to read -- just keep velocity wthin the bounds of (-1, 1) in both directions.
-    if self.velocity[0] < -2:
-      self.velocity = (-2, self.velocity[1])
-    if self.velocity[0] > 2:
-      self.velocity = (2, self.velocity[1])
-    if self.velocity[1] < -2:
-      self.velocity = (self.velocity[0], -2)
-    if self.velocity[1] > 2:
-      self.velocity = (self.velocity[0], 2)
+    max_y_velocity: int = 4
+    max_x_velocity: int = 2
+    if abs(self.velocity[0]) > max_y_velocity:
+      self.velocity = (sign(self.velocity[0]) * max_y_velocity, self.velocity[1])
+    if abs(self.velocity[1]) > max_x_velocity:
+      self.velocity = (self.velocity[0], sign(self.velocity[1]) * max_y_velocity)
 
-  def chars(self):
-    pass
+  def chars(self) -> str:
+    return ""
 
-  def experiences_gravity(self):
+  def experiences_gravity(self) -> bool:
     return False
 
-  def tick(self, game):
-    remaining_velocity = self.velocity
+  def tick(self, game) -> None:
+    remaining_velocity: tuple[int, int] = self.velocity
     while abs(remaining_velocity[0]) > 0 or abs(remaining_velocity[1]) > 0:
       # not quite perfect because if we need to do (3,1) then we'll do (1,1) then (1,0) and (1,0) which
       # may be a little wrong sometimes.
-      y_movement = sign(remaining_velocity[0])
-      x_movement = sign(remaining_velocity[1])
-      remaining_velocity = (remaining_velocity[0] - y_movement, remaining_velocity[1] - x_movement)
+      y_movement: int = sign(remaining_velocity[0])
+      x_movement: int = sign(remaining_velocity[1])
+      remaining_velocity: tuple[int, int] = (remaining_velocity[0] - y_movement, remaining_velocity[1] - x_movement)
 
       next_position = self.position[0] + y_movement, self.position[1] + x_movement
       other_items = game.items_at(self.positions(start_pos=next_position))
@@ -130,7 +130,7 @@ class MovableObject(Collidable):
       ret.append((pos[0] + h, pos[1]))
     return ret
 
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window):
     for pos, ch in zip(self.positions(), self.chars()):
       self.addch(stdscr, (pos[0], pos[1]), ch)
   
@@ -172,7 +172,36 @@ class LittleBadGuy(MovableObject):
       self.velocity = (self.velocity[0], -1 * self.velocity[1])
 
   def chars(self):
-    return "BB"
+    return "bb"
+  
+  def kills_player_on_collision(self):
+    return True
+
+class Bird(MovableObject):
+  def __init__(self, initial_pos):
+    super().__init__(initial_pos, (0, -1))
+    self.last_reversal = 0
+    self.flap_indicator = 0
+
+  def experiences_gravity(self):
+    return False
+
+  def tick(self, game):
+    super().tick(game)
+    self.last_reversal += 1
+    if self.last_reversal > 10:
+      self.last_reversal = 0
+      self.velocity = (self.velocity[0], -1 * self.velocity[1])
+
+  def chars(self):
+    self.flap_indicator = (self.flap_indicator + 1) % 10
+    if self.flap_indicator < 5:
+      return "W"
+    else:
+      return "w"
+
+  def kills_player_on_collision(self):
+    return True
 
 class Player(MovableObject):
   CHARS = "MM"
@@ -197,7 +226,10 @@ class Player(MovableObject):
       return Player.MEGA_CHARS
 
   def jump(self):
-    self.adjust_velocity(new_abs_y=3)
+    if self.is_little:
+      self.adjust_velocity(new_abs_y=3)
+    else:
+      self.adjust_velocity(new_abs_y=5)
 
   def right(self):
     self.adjust_velocity(relative_x=1)
@@ -212,7 +244,7 @@ class Player(MovableObject):
     super().collide(other_object)
     if isinstance(other_object, Edamame):
       self.is_little = False
-    elif isinstance(other_object, LittleBadGuy) or isinstance(other_object, Tree):
+    elif other_object.kills_player_on_collision():
       self.is_dead = True
 
 class Edamame(Collidable):
@@ -222,7 +254,7 @@ class Edamame(Collidable):
   def positions(self):
     return [self.position]
 
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window):
     self.addch(stdscr, (self.position[0], self.position[1]), "E")
 
 class Brick(Collidable):
@@ -232,7 +264,7 @@ class Brick(Collidable):
   def positions(self):
     return [self.position]
 
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window):
     self.addch(stdscr, (self.position[0], self.position[1]), "=")
 
 
@@ -247,8 +279,11 @@ class Tree(Collidable):
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window):
     self.addstr_vert(stdscr, self.position, self.chars)
+
+  def kills_player_on_collision(self):
+    return True
 
 class EndingFlag(Collidable):
   def __init__(self, pos):
@@ -262,14 +297,14 @@ class EndingFlag(Collidable):
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window):
     self.addstr_vert(stdscr, self.position, self.chars)
 
   def collide(self, other_object):
     self.had_collision = True
 
 class Game(object):
-  FINAL_LEVEL = 4
+  FINAL_LEVEL = 7
 
   # game states
   RUNNING = 0
@@ -319,16 +354,17 @@ class Game(object):
     return ret
   
   def debug_msg(self):
-    #return ""
-    x = []
-    for item in self.items:
-      if isinstance(item, MovableObject):
-        x.append(f"Pos: {item.position}, Vel: {item.velocity}")
-    return "|".join(x) + debugger.get_log_str()
+    return ""
+    #x = []
+    #for item in self.items:
+    #  if isinstance(item, MovableObject):
+    #    x.append(f"Pos: {item.position}, Vel: {item.velocity}")
+    #return "|".join(x) + debugger.get_log_str()
 
   def tick(self):
     if self.game_over():
-      return False
+      # this shouldn't really get called if the game's over.
+      return None
     
     for item in self.items:
       item.tick(self)
@@ -341,7 +377,7 @@ class Game(object):
 
     return Game.TICK_CONTINUING
   
-  def render(self, stdscr):
+  def render(self, stdscr: curses.window):
     stdscr.clear()
     for item in self.items:
       item.render(stdscr)
@@ -351,7 +387,7 @@ class Game(object):
     stdscr.addstr(4, 0, self.debug_msg())
     stdscr.refresh()
 
-  def refresh_window(self, stdscr):
+  def refresh_window(self, stdscr: curses.window):
     try:
       self.acquire_lock()
       
@@ -393,7 +429,7 @@ class Game(object):
 
     return min(min_speed, max(max_speed, ((base_speed - adjustment_by_score) * boost_multiplier) / boost_denominator))
   
-  def accept_keypress(self, k, stdscr):
+  def accept_keypress(self, k, stdscr: curses.window):
     try:
       self.acquire_lock()
       if k == "p":
@@ -446,6 +482,8 @@ def load_initial_state(fname):
         stuff.append(EndingFlag(game_pos))
       elif ch == "T":
         stuff.append(Tree(game_pos))
+      elif ch == "W":
+        stuff.append(Bird(game_pos))
   
   return stuff
 
@@ -459,13 +497,21 @@ def play_game(stdscr, level):
     k = stdscr.getkey()
     if game.game_over():
       if k == 'p':
-        play_game(stdscr, level=level + 1)
+        if game.game_state == Game.WON:
+          play_game(stdscr, level=level + 1)
+        else:
+          play_game(stdscr, level=level)
+        break
       elif k in ['1','2','3','4','5','6','7','8','9']:
         play_game(stdscr, level=int(k))
+        break
       elif k == 'r':
         play_game(stdscr, level=level)
+        break
       elif k == 'e':
         break
+      else:
+        pass
     else:
       game.accept_keypress(k, stdscr)
  
