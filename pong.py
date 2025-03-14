@@ -191,7 +191,7 @@ class Game(object):
         self.left_paddle.down()
 
   def debug_msg(self):
-    return f"Speed Boost: {self.speed_boost}"
+    return f"Ball: {self.ball.position}, Left Paddle: {self.left_paddle.velocity}, Right Paddle: {self.right_paddle.velocity}, Speed Boost: {self.speed_boost}"
 
   def tick(self):
     if self.game_over():
