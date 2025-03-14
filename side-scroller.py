@@ -204,7 +204,7 @@ class Player(MovableObject):
     super().collide(other_object)
     if isinstance(other_object, Edamame):
       self.is_little = False
-    elif isinstance(other_object, LittleBadGuy):
+    elif isinstance(other_object, LittleBadGuy) or isinstance(other_object, Tree):
       # if we are little, we die. if we are mega, we un-mega.
       # either way, the bad guy disappears.
       if self.is_little:
@@ -232,6 +232,22 @@ class Brick(Collidable):
 
   def render(self, stdscr):
     self.addch(stdscr, (self.position[0], self.position[1]), "=")
+
+
+class Tree(Collidable):
+  def __init__(self, pos):
+    self.position = pos
+    self.chars = "TTT"
+
+  def positions(self):
+    ret = []
+    for i in range(len(self.chars)):
+      ret.append((self.position[0] + i, self.position[1]))
+    return ret
+
+  def render(self, stdscr):
+    for i in range(len(self.chars)):
+      self.addch(stdscr, (self.position[0] + i, self.position[1]), self.chars[i])
 
 class EndingFlag(Collidable):
   def __init__(self, pos):
@@ -304,7 +320,7 @@ class Game(object):
     for item in self.items:
       if isinstance(item, MovableObject):
         x.append(f"Pos: {item.position}, Vel: {item.velocity}")
-    return "|".join(x)
+    return "|".join(x) + debugger.get_log_str()
 
   def tick(self):
     if self.game_over():
@@ -330,7 +346,7 @@ class Game(object):
       item.render(stdscr)
     if self.status_msg is not None:
       stdscr.addstr(curses.LINES // 2, (curses.COLS - len(self.status_msg)) // 2, self.status_msg)      
-    stdscr.addstr(1, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up to move paddle up, down to move down.")
+    stdscr.addstr(1, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up/left/right/down to move.")
     stdscr.addstr(4, 0, self.debug_msg())
     stdscr.refresh()
 
@@ -344,7 +360,7 @@ class Game(object):
       if self.game_state == Game.RUNNING:
         tick_result = self.tick()
         if tick_result == Game.TICK_WIN:
-          self.status_msg = "You win! Hit 'r' to restart or 'e' to exit."
+          self.status_msg = "You win! Hit 'p' to play the next level, 'r' to restart or 'e' to exit."
           self.game_state = Game.WON
         elif tick_result == Game.TICK_LOSS:
           self.status_msg = "Oh no! You died. :( :( Hit 'r' to restart or 'e' to exit."
@@ -427,23 +443,29 @@ def load_initial_state(fname):
         stuff.append(LittleBadGuy(game_pos))
       elif ch == "F":
         stuff.append(EndingFlag(game_pos))
+      elif ch == "T":
+        stuff.append(Tree(game_pos))
   
   return stuff
 
-def play_game(stdscr):
+def play_game(stdscr, level):
   stdscr.clear()
 
-  game = Game(load_initial_state("side-scroller-1.txt"))
+  game = Game(load_initial_state(f"/Users/nsanch/kids-project/side-scroller-levels/level{level}.txt"))
   game.refresh_window(stdscr)
 
   while game.game_state != Game.QUIT:
     k = stdscr.getkey()
     if game.game_over():
-      if k == 'r':
-        play_game(stdscr)
+      if k == 'p':
+        play_game(stdscr, level=level + 1)
+      elif k == 'r':
+        play_game(stdscr, level=1)
       elif k == 'e':
         break
     else:
       game.accept_keypress(k, stdscr)
  
-curses.wrapper(play_game)
+curses.initscr()
+curses.resizeterm(40, 100)
+curses.wrapper(play_game, sys.argv[1] if len(sys.argv) > 1 else 1)
