@@ -354,12 +354,10 @@ class Game(object):
   def refresh_window(self, stdscr):
     try:
       self.acquire_lock()
-
-      if self.game_over():
-        return
       
       if self.game_state == Game.RUNNING:
         tick_result = self.tick()
+
         if tick_result == Game.TICK_WIN:
           if self.level == Game.FINAL_LEVEL:
             self.status_msg = "You win the game! Woohoo! Hit 'e' to exit or 'r' to restart."
@@ -369,7 +367,7 @@ class Game(object):
         elif tick_result == Game.TICK_LOSS:
           self.status_msg = "Oh no! You died. :( :( Hit 'r' to restart or 'e' to exit."
           self.game_state = Game.LOST
-        
+    
       self.render(stdscr)
 
       def task():
@@ -393,8 +391,7 @@ class Game(object):
     max_speed = 0.02
     min_speed = 0.5
 
-    return max(base_speed, (base_speed - adjustment_by_score) * boost_multiplier) / boost_denominator
-    return max(0.1 - (total_score * 0.005), 0.02) / (1 + self.speed_boost)
+    return min(min_speed, max(max_speed, ((base_speed - adjustment_by_score) * boost_multiplier) / boost_denominator))
   
   def accept_keypress(self, k, stdscr):
     try:
@@ -419,7 +416,7 @@ class Game(object):
       elif k == "f":
         self.speed_boost = min(5, 1 + self.speed_boost)
       elif k == "s":
-        self.speed_boost = max(0, self.speed_boost - 1)
+        self.speed_boost = max(-5, self.speed_boost - 1)
     finally:
       self.release_lock()
 
