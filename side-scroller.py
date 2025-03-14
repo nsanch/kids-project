@@ -1,6 +1,7 @@
 #!/Users/nsanch/kids-project/.venv/bin/python
 
 import curses
+import math
 import threading
 import time
 import random
@@ -21,6 +22,13 @@ class DebugLogger(object):
     return '|'.join(self.log)
 
 debugger = DebugLogger()
+
+def sign(x):
+  if x < 0:
+    return -1
+  elif x > 0:
+    return 1
+  return 0
 
 class Collidable(object):
   def __init__(self):
@@ -66,14 +74,14 @@ class MovableObject(Collidable):
       self.velocity = (self.velocity[0], self.velocity[1] + relative_x)
 
     # clunky but simple to read -- just keep velocity wthin the bounds of (-1, 1) in both directions.
-    if self.velocity[0] < -1:
-      self.velocity = (-1, self.velocity[1])
-    if self.velocity[0] > 1:
-      self.velocity = (1, self.velocity[1])
-    if self.velocity[1] < -1:
-      self.velocity = (self.velocity[0], -1)
-    if self.velocity[1] > 1:
-      self.velocity = (self.velocity[0], 1)
+    if self.velocity[0] < -2:
+      self.velocity = (-2, self.velocity[1])
+    if self.velocity[0] > 2:
+      self.velocity = (2, self.velocity[1])
+    if self.velocity[1] < -2:
+      self.velocity = (self.velocity[0], -2)
+    if self.velocity[1] > 2:
+      self.velocity = (self.velocity[0], 2)
 
   def chars(self):
     pass
@@ -82,16 +90,25 @@ class MovableObject(Collidable):
     return False
 
   def tick(self, game):
-    next_position = self.position[0] + self.velocity[0], self.position[1] + self.velocity[1]
-    other_items = game.items_at(self.positions(start_pos=next_position))
-    if len(other_items) == 0 or other_items == [self]:
-      self.position = next_position
-    else:
-      for other_item in other_items:
-        if self == other_item:
-          continue
-        self.collide(other_item)
-        other_item.collide(self)
+    remaining_velocity = self.velocity
+    while abs(remaining_velocity[0]) > 0 or abs(remaining_velocity[1]) > 0:
+      # not quite perfect because if we need to do (3,1) then we'll do (1,1) then (1,0) and (1,0) which
+      # may be a little wrong sometimes.
+      y_movement = sign(remaining_velocity[0])
+      x_movement = sign(remaining_velocity[1])
+      remaining_velocity = (remaining_velocity[0] - y_movement, remaining_velocity[1] - x_movement)
+
+      next_position = self.position[0] + y_movement, self.position[1] + x_movement
+      other_items = game.items_at(self.positions(start_pos=next_position))
+      if len(other_items) == 0 or other_items == [self]:
+        self.position = next_position
+      else:
+        for other_item in other_items:
+          if self == other_item:
+            continue
+          self.collide(other_item)
+          other_item.collide(self)
+        remaining_velocity = (0, 0)
   
     if self.experiences_gravity():
       self.apply_gravity(game)
@@ -127,12 +144,12 @@ class MovableObject(Collidable):
           y_delta = other_p[0] - self_p[0]
           x_delta = other_p[1] - self_p[1]
           if (x_delta == 0 and
-              ((y_delta == 1 and self.velocity[0] == 1) or
-               (y_delta == -1 and self.velocity[0] == -1))):
+              ((0 < y_delta <= self.velocity[0]) or
+               (0 > y_delta >= self.velocity[0]))):
             stop_in_y = True
           if (y_delta == 0 and 
-              ((x_delta == 1 and self.velocity[1] == 1) or
-               (x_delta == -1 and self.velocity[1] == -1))):
+              ((0 < x_delta <= self.velocity[1]) or
+               (0 > x_delta >= self.velocity[1]))):
             stop_in_x = True
       if stop_in_y:
         self.adjust_velocity(new_abs_y=0)
@@ -302,12 +319,12 @@ class Game(object):
     return ret
   
   def debug_msg(self):
-    return ""
-    #x = []
-    #for item in self.items:
-    #  if isinstance(item, MovableObject):
-    #    x.append(f"Pos: {item.position}, Vel: {item.velocity}")
-    #return "|".join(x) + debugger.get_log_str()
+    #return ""
+    x = []
+    for item in self.items:
+      if isinstance(item, MovableObject):
+        x.append(f"Pos: {item.position}, Vel: {item.velocity}")
+    return "|".join(x) + debugger.get_log_str()
 
   def tick(self):
     if self.game_over():
