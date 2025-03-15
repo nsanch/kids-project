@@ -265,8 +265,35 @@ class Brick(Collidable):
     return [self.position]
 
   def render(self, stdscr: curses.window):
-    self.addch(stdscr, (self.position[0], self.position[1]), "=")
+    self.addch(stdscr, self.position, "=")
 
+class Fire(Collidable):# there should be a special fire
+  def __init__(self, pos):
+    self.position = pos
+    self.size_indicator = random.randint(0, 10)
+    self.num_fire = 1
+
+  def tick(self, game):
+    super().tick(game)
+    self.size_indicator = (self.size_indicator + 1) % 20
+    if self.size_indicator > 15:
+      self.num_fire = 2
+    elif self.size_indicator > 7:
+      self.num_fire = 1
+    else:
+      self.num_fire = 0  
+
+  def positions(self):
+    ret = []
+    for i in range(self.num_fire):
+      ret.append((self.position[0] + i, self.position[1]))
+    return ret
+
+  def render(self, stdscr: curses.window):
+    self.addstr_vert(stdscr, self.position, "🔥" * self.num_fire)
+
+  def kills_player_on_collision(self):
+    return True
 
 class Tree(Collidable):
   def __init__(self, pos):
@@ -301,10 +328,45 @@ class EndingFlag(Collidable):
     self.addstr_vert(stdscr, self.position, self.chars)
 
   def collide(self, other_object):
-    self.had_collision = True
+    if isinstance(other_object, Player):
+      self.had_collision = True
+
+class Fireball(MovableObject):
+  def __init__(self, pos, velocity):
+    super().__init__(pos, velocity)
+
+  def chars(self) -> str:
+    return "O"
+
+  def experiences_gravity(self):
+    return True
+
+  def kills_player_on_collision(self):
+    return True
+
+class Canon(Collidable):
+  def __init__(self, pos):
+    self.position = pos
+    self.chars = "/"
+    self.tick_counter = 0
+
+  def positions(self):
+    ret = []
+    for i in range(len(self.chars)):
+      ret.append((self.position[0] + i, self.position[1]))
+    return ret
+
+  def tick(self, game):
+    super().tick(game)
+    self.tick_counter += 1
+    if self.tick_counter % 10 == 0:
+      game.add_item(Fireball((self.position[0] + 1, self.position[1]), (2, 2)))
+
+  def render(self, stdscr: curses.window):
+    self.addch(stdscr, self.position, self.chars)
 
 class Game(object):
-  FINAL_LEVEL = 7
+  FINAL_LEVEL = 8
 
   # game states
   RUNNING = 0
@@ -352,6 +414,9 @@ class Game(object):
           ret.append(item)
           break
     return ret
+  
+  def add_item(self, item):
+    self.items.append(item)
   
   def debug_msg(self):
     return ""
@@ -484,7 +549,12 @@ def load_initial_state(fname):
         stuff.append(Tree(game_pos))
       elif ch == "W":
         stuff.append(Bird(game_pos))
-  
+      elif ch == "🔥":
+        stuff.append(Fire(game_pos))
+      elif ch == "C":
+        stuff.append(Canon(game_pos))
+
+
   return stuff
 
 def play_game(stdscr, level):
@@ -517,4 +587,4 @@ def play_game(stdscr, level):
  
 curses.initscr()
 curses.resizeterm(40, 100)
-curses.wrapper(play_game, sys.argv[1] if len(sys.argv) > 1 else 1)
+curses.wrapper(play_game, int(sys.argv[1]) if len(sys.argv) > 1 else 1)

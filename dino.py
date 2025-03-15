@@ -10,7 +10,7 @@ class SavedState(object):
   VERSION = 1
 
   def __init__(self):
-    self.fname: str = os.path.join(os.getenv("HOME"), ".dino")
+    self.fname: str = os.path.join(os.getenv("HOME"), ".dino") # type: ignore
     self.load()
     self.save()
 
@@ -53,8 +53,18 @@ class SavedState(object):
 
   def high_score(self):
     return self.state.get("high_score", 0)
+  
+class Renderable(object):
+  def __init__(self):
+    pass
 
-class Empty(object):
+  def render(self, stdscr: curses.window, i: int) -> None:
+    pass
+
+  def tick(self) -> None:
+    pass
+
+class Empty(Renderable):
   def __init__(self):
     pass
 
@@ -64,7 +74,7 @@ class Empty(object):
   def render(self, stdscr, i):
     stdscr.addch(curses.LINES - 1, i, ".")
   
-class Dino(object):
+class Dino(Renderable):
   CHARS = "DDDDD"
   MEGA_CHARS = CHARS * 3
 
@@ -73,87 +83,90 @@ class Dino(object):
     self.upcoming_heights = None
     self.chars = Dino.CHARS
 
-  def tick(self):
+  def tick(self) -> None:
     if self.upcoming_heights is not None:
       self.height = self.upcoming_heights.pop(0)
       if len(self.upcoming_heights) == 0:
         self.upcoming_heights = None
 
-  def render(self, stdscr, i):
+  def render(self, stdscr, i) -> None:
     for h in range(len(self.chars)):
       stdscr.addch(curses.LINES - 1 - (self.height + h), i, self.chars[h])
 
-  def jump(self): 
+  def jump(self) -> None: 
     # 1 to N-1, N, N, N, N-1 to 1
     if self.upcoming_heights is None:
       self.upcoming_heights = list(range(1, len(self.chars))) + (3*[len(self.chars)]) + list(range(len(self.chars), -1, -1))
 
-  def mega(self):
+  def mega(self) -> None:
     if self.chars == Dino.CHARS:
       self.chars = Dino.MEGA_CHARS
     else:
       self.chars = Dino.CHARS
 
-  def y_positions(self) -> list[tuple[int, int]]:
+  def y_positions(self) -> list[int]:
     return list(range(self.height, self.height + len(self.chars), 1))
 
-class Obstacle(object):
+class Obstacle(Renderable):
   def __init__(self):
     pass
 
-  def tick(self):
+  def render(self, stdscr, i) -> None:
     pass
 
-  def y_positions(self):
+  def tick(self) -> None:
     pass
 
-  def difficulty(self):
+  def y_positions(self) -> list[int]: # type: ignore
     pass
+
+  def difficulty(self) -> int:
+    return 1
 
 class Tree(Obstacle):
   CHARS = "TTT"
   MEGA_CHARS = "MT" * 5
   
-  def __init__(self, is_mega):
+  def __init__(self, is_mega: bool):
     if is_mega:
       self.chars = Tree.MEGA_CHARS
     else:
       self.chars = Tree.CHARS
 
-  def render(self, stdscr, i):
+  def render(self, stdscr: curses.window, i: int) -> None:
     for h in range(len(self.chars)):
       stdscr.addch(curses.LINES - 1 - h, i, self.chars[h])
 
-  def y_positions(self):
-    return range(len(self.chars))
+  def y_positions(self) -> list[int]:
+    return list(range(len(self.chars)))
   
-  def difficulty(self):
+  def difficulty(self) -> int:
     return 3 * len(self.chars)
   
 class Bird(Obstacle):
-  FLAPS = ["W", "w"]
+  FLAPS: list[str] = ["W", "w"]
 
-  def __init__(self, is_tall):
+  def __init__(self, is_tall: bool):
     if is_tall:
       self.y = 8
     else:
       self.y = 3
-    self.flappy_index = 0
+    self.flappy_index: int = 0
 
-  def tick(self):
+  def tick(self) -> None:
     self.flappy_index = (self.flappy_index + 1) % len(self.FLAPS)
 
-  def chars(self):
+  def chars(self) -> str:
     return Bird.FLAPS[self.flappy_index]
   
-  def render(self, stdscr, i):
+  def render(self, stdscr: curses.window, i: int) -> None:
     stdscr.addch(curses.LINES - 1 - self.y, i, self.chars()) 
     stdscr.addch(curses.LINES - 1, i, ".")
   
-  def y_positions(self) -> list[tuple[int, int]]:
+  def y_positions(self) -> list[int]:
     return [self.y]
   
-  def difficulty(self):
+  def difficulty(self) -> int:
     return self.y * 5
 
 class Game(object):
@@ -166,26 +179,26 @@ class Game(object):
   QUIT = 3
 
   def __init__(self):
-    self.dino = Dino()
-    self.next_n_columns = [Empty() for i in range(Game.DINO_POS)]
-    self.last_obstacle = 0
-    self.game_state = Game.RUNNING
-    self.points = 0
-    self.lock = threading.Lock()
-    self.saved_state = SavedState()
+    self.dino: Dino = Dino()
+    self.next_n_columns: list[Renderable] = [Empty() for i in range(Game.DINO_POS)]
+    self.last_obstacle: int = 0
+    self.game_state: int = Game.RUNNING
+    self.points: int = 0
+    self.lock: threading.Lock = threading.Lock()
+    self.saved_state: SavedState = SavedState()
     for i in range(curses.COLS-1 - Game.DINO_POS - 1):
       self.next_n_columns.append(self.next_up())
 
-  def acquire_lock(self):
+  def acquire_lock(self) -> None:
     self.lock.acquire()
   
-  def release_lock(self):
+  def release_lock(self) -> None:
     self.lock.release()
 
-  def game_over(self):
+  def game_over(self) -> bool:
     return self.game_state in [Game.LOST, Game.QUIT]
 
-  def next_up(self):
+  def next_up(self) -> Renderable:
     if self.last_obstacle >= Game.MIN_DIST_BETWEEEN_TREES:
       if random.randint(0, 100) < 10:
         self.last_obstacle = 0
@@ -201,12 +214,12 @@ class Game(object):
     self.last_obstacle += 1
     return Empty()
   
-  def tick(self):
+  def tick(self) -> bool:
     if self.game_over(): 
       return False
     
     self.next_n_columns.pop(0)
-    closest = self.next_n_columns[Game.DINO_POS + 1]
+    closest: Renderable = self.next_n_columns[Game.DINO_POS + 1]
     if isinstance(closest, Obstacle):
       dino_pos = self.dino.y_positions()
       obstacle_pos = closest.y_positions()

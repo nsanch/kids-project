@@ -21,7 +21,7 @@ class Collidable(object):
   def collide(self, other_object):
     pass
 
-  def is_wall(self):
+  def is_wall(self) -> bool:
     return False
 
 
@@ -30,7 +30,7 @@ class MovableObject(Collidable):
     self.position = position
     self.velocity = velocity
 
-  def chars(self):
+  def chars(self) -> str: # type: ignore
     pass
 
   def tick(self, game):
@@ -60,7 +60,7 @@ class MovableObject(Collidable):
   def collide(self, other_object):
     pass
 
-  def is_wall(self):
+  def is_wall(self) -> bool:
     return False
 
 class Ball(MovableObject):
@@ -124,13 +124,10 @@ class Wall(Collidable):
   def collide(self, other_object):
     pass
 
-  def is_wall(self):
+  def is_wall(self) -> bool:
     return True
 
 class Game(object):
-  LEFT_PADDLE_POS = lambda: (curses.LINES - ((curses.LINES - Paddle.HEIGHT) // 2), 3)
-  RIGHT_PADDLE_POS = lambda: (curses.LINES - ((curses.LINES - Paddle.HEIGHT) // 2), curses.COLS - 4)
-
   # game states
   RUNNING = 0
   PAUSED = 1
@@ -144,13 +141,18 @@ class Game(object):
   RIGHT_POINT = 1
   LEFT_POINT = 2
 
-  def __init__(self):
-    self.ball = Ball(((curses.LINES - 5) // 2, curses.COLS // 2))
-    self.left_paddle = Paddle(Game.LEFT_PADDLE_POS())
-    self.right_paddle = Paddle(Game.RIGHT_PADDLE_POS())
+  def __init__(self, level):
+    LEFT_PADDLE_POS = (curses.LINES - ((curses.LINES - Paddle.HEIGHT) // 2), 3)
+    RIGHT_PADDLE_POS = (curses.LINES - ((curses.LINES - Paddle.HEIGHT) // 2), curses.COLS - 4)
+
+    self.balls = []
+    for i in range(level):
+      self.balls.append(Ball((((curses.LINES - 5) // 2) + 1, curses.COLS // 2)))
+    self.left_paddle = Paddle(LEFT_PADDLE_POS)
+    self.right_paddle = Paddle(RIGHT_PADDLE_POS)
     self.top_wall = Wall((6, 0))
     self.bottom_wall = Wall((curses.LINES - 1, 0))
-    self.items = [self.left_paddle, self.right_paddle, self.top_wall, self.bottom_wall, self.ball]
+    self.items = [self.left_paddle, self.right_paddle, self.top_wall, self.bottom_wall] + self.balls
     self.game_state = Game.RUNNING
     self.lock = threading.Lock()
     self.score = (0, 0)
@@ -180,10 +182,10 @@ class Game(object):
     cpu_advantage_in_score = self.score[0] - self.score[1]
 
     # we get a 1 in 6 chance of moving the paddle when the ball is moving towards us
-    if random.randint(0, 5 + cpu_advantage_in_score) == 0 and self.ball.velocity[1] < 0:
+    if random.randint(0, 5 + cpu_advantage_in_score) == 0 and self.balls[0].velocity[1] < 0:
       # if the ball is above the paddle, move up.
       # if the ball is below the paddle, move down.
-      ball_pos = self.ball.position
+      ball_pos = self.balls[0].position
       paddle_pos = self.left_paddle.position
       if ball_pos[0] < paddle_pos[0]:
         self.left_paddle.up()
@@ -191,7 +193,7 @@ class Game(object):
         self.left_paddle.down()
 
   def debug_msg(self):
-    return f"Ball: {self.ball.position}, Left Paddle: {self.left_paddle.velocity}, Right Paddle: {self.right_paddle.velocity}, Speed Boost: {self.speed_boost}"
+    return f"Ball: {self.balls[0].position}, Left Paddle: {self.left_paddle.velocity}, Right Paddle: {self.right_paddle.velocity}, Speed Boost: {self.speed_boost}"
 
   def tick(self):
     if self.game_over():
@@ -200,13 +202,16 @@ class Game(object):
     for item in self.items:
       item.tick(self)
     
-    if self.ball.position[1] == 0:
+    if any([b.position[1] == 0 for b in self.balls]):
       self.score = (self.score[0], self.score[1] + 1)
-      self.ball.reset()
+      for b in self.balls:
+        b.reset()
+
       return Game.RIGHT_POINT
-    elif self.ball.position[1] == curses.COLS - 1:
+    if any([b.position[1] == curses.COLS - 1 for b in self.balls]):
       self.score = (self.score[0] + 1, self.score[1])
-      self.ball.reset()
+      for b in self.balls:
+        b.reset()
       return Game.LEFT_POINT
     
     self.maybe_move_left_paddle()
@@ -297,20 +302,20 @@ class Game(object):
     finally:
       self.release_lock()
 
-def play_game(stdscr):
+def play_game(stdscr, level):
   stdscr.clear()
 
-  game = Game()
+  game = Game(level)
   game.refresh_window(stdscr)
 
   while game.game_state != Game.QUIT:
     k = stdscr.getkey()
     if game.game_over():
       if k == 'r':
-        play_game(stdscr)
+        play_game(stdscr, level=level+1)
       elif k == 'e':
         break
     else:
       game.accept_keypress(k, stdscr)
  
-curses.wrapper(play_game)
+curses.wrapper(play_game, int(sys.argv[1]) if len(sys.argv) > 1 else 1)
