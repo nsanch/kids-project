@@ -309,6 +309,7 @@ def play_game(stdscr):
     if game.game_over():
       if k == 'r':
         play_game(stdscr)
+        break
       elif k == 'e':
         break
     else:
