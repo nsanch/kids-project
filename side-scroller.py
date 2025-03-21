@@ -30,28 +30,101 @@ def sign(x: int) -> int:
     return 1
   return 0
 
+class GameArea(object):
+  def __init__(self, win: curses.window):
+    self.__win = win
+    self.__buffer = {}
+
+  def clear(self):
+    self.__buffer = {}
+    self.__win.clear()
+  
+  def refresh(self, player_location: list[tuple[int, int]]):
+    max_y = max([k[0] for k in self.__buffer.keys()])
+    max_x = max([k[1] for k in self.__buffer.keys()])
+    if max_y < self.__win.getmaxyx()[0] and max_x < self.__win.getmaxyx()[1]:
+      for (y,x), ch in self.__buffer.items():
+        game_y = y
+        game_x = x
+        screen_y = self.__win.getmaxyx()[0] - game_y - 1
+        self.__win.addch(screen_y, x, ch)
+    else:
+      bottom_left, top_right = self.center_around(player_location)
+      for (y,x), ch in self.__buffer.items():
+        if y < bottom_left[0] or y >= top_right[0]:
+          continue
+        if x < bottom_left[1] or x >= top_right[1]:
+          continue
+        game_y = y - bottom_left[0]
+        game_x = x - bottom_left[1]
+        screen_y = self.__win.getmaxyx()[0] - game_y - 1
+        screen_x = game_x
+        maxyx = self.__win.getmaxyx()
+        # cannot write to bottom-right corner for some reason.
+        if screen_y == maxyx[0]-1 and screen_x == maxyx[1]-1:
+          continue
+        self.__win.addch(screen_y, screen_x, ch)
+    self.__win.refresh()
+
+  def center_around(self, player_location: list[tuple[int, int]]):
+    game_window_height, game_window_width = self.__win.getmaxyx()
+    player_min_x = min([l[1] for l in player_location])
+    player_min_y = min([l[0] for l in player_location])
+    # center the player horizontally, but vertically keep them near the bottom.
+    bottom = player_min_y - 10
+    if bottom < 0:
+      bottom = 0
+    left = player_min_x - (game_window_width // 2)
+    if left < 0:
+      left = 0
+    bottom_left = (bottom, left)
+    top_right = bottom_left[0] + game_window_height, bottom_left[1] + game_window_width
+    return bottom_left, top_right
+
+  def addch(self, y: int, x: int, ch: str) -> None:
+    self.__buffer[(y, x)] = ch
+
+class GameWindow(object):
+  def __init__(self, stdscr):
+    self.__stdscr = stdscr
+    self.__status_area = stdscr.subwin(5, curses.COLS, 0, 0)
+    self.__game_area = GameArea(stdscr.subwin(curses.LINES - 5, curses.COLS, 5, 0))
+
+  def status_area(self):
+    return self.__status_area
+  
+  def game_area(self):
+    return self.__game_area
+  
+  def clear(self):
+    self.game_area().clear()
+    self.status_area().clear()
+    self.__stdscr.clear()
+
+  def refresh(self, player_location):
+    self.game_area().refresh(player_location)
+    self.status_area().refresh()
+    self.__stdscr.refresh()
+
 class Collidable(object):
   def __init__(self):
     pass
 
-  def addch(self, stdscr: curses.window, pos: tuple[int, int], ch: str) -> None:
-    # 0,0 in the game is y_max,0 in the rendering.
-    game_y = pos[0]
-    screen_y = curses.LINES - game_y - 1
-    stdscr.addch(screen_y, pos[1], ch)
+  def addch(self, stdscr: GameArea, pos: tuple[int, int], ch: str) -> None:
+    stdscr.addch(pos[0], pos[1], ch)
 
-  def addstr(self, stdscr: curses.window, pos: tuple[int, int], s: str) -> None:
+  def addstr(self, stdscr: GameArea, pos: tuple[int, int], s: str) -> None:
     for ch, i in zip(s, range(len(s))):
       self.addch(stdscr, (pos[0], pos[1] + i), ch)
 
-  def addstr_vert(self, stdscr: curses.window, pos: tuple[int, int], s: str) -> None:
+  def addstr_vert(self, stdscr: GameArea, pos: tuple[int, int], s: str) -> None:
     for ch, i in zip(s, range(len(s))):
       self.addch(stdscr, (pos[0] + (len(s) - 1) - i, pos[1]), ch)
 
   def tick(self, game) -> None:
     pass
 
-  def render(self, stdscr: curses.window) -> None:
+  def render(self, stdscr: GameArea) -> None:
     pass
 
   def collide(self, other_object) -> None:
@@ -123,14 +196,14 @@ class MovableObject(Collidable):
       # there's something below us, we can't fall.
       self.adjust_velocity(new_abs_y=0)
 
-  def positions(self, start_pos=None):
+  def positions(self, start_pos=None) -> list[tuple[int, int]]:
     ret = []
     pos = start_pos if start_pos is not None else self.position
     for h in range(len(self.chars())):
       ret.append((pos[0] + h, pos[1]))
     return ret
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     for pos, ch in zip(self.positions(), self.chars()):
       self.addch(stdscr, (pos[0], pos[1]), ch)
   
@@ -254,7 +327,7 @@ class Edamame(Collidable):
   def positions(self):
     return [self.position]
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     self.addch(stdscr, (self.position[0], self.position[1]), "E")
 
 class Brick(Collidable):
@@ -264,7 +337,7 @@ class Brick(Collidable):
   def positions(self):
     return [self.position]
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     self.addch(stdscr, self.position, "=")
 
 class Fire(Collidable):# there should be a special fire
@@ -289,7 +362,7 @@ class Fire(Collidable):# there should be a special fire
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     self.addstr_vert(stdscr, self.position, "🔥" * self.num_fire)
 
   def kills_player_on_collision(self):
@@ -306,7 +379,7 @@ class Tree(Collidable):
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     self.addstr_vert(stdscr, self.position, self.chars)
 
   def kills_player_on_collision(self):
@@ -324,7 +397,7 @@ class EndingFlag(Collidable):
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     self.addstr_vert(stdscr, self.position, self.chars)
 
   def collide(self, other_object):
@@ -362,11 +435,11 @@ class Canon(Collidable):
     if self.tick_counter % 10 == 0:
       game.add_item(Fireball((self.position[0] + 1, self.position[1]), (2, 2)))
 
-  def render(self, stdscr: curses.window):
+  def render(self, stdscr: GameArea):
     self.addch(stdscr, self.position, self.chars)
 
 class Game(object):
-  FINAL_LEVEL = 8
+  FINAL_LEVEL = 9
 
   # game states
   RUNNING = 0
@@ -442,17 +515,19 @@ class Game(object):
 
     return Game.TICK_CONTINUING
   
-  def render(self, stdscr: curses.window):
-    stdscr.clear()
+  def render(self, game_window: GameWindow):
+    game_window.clear()
     for item in self.items:
-      item.render(stdscr)
+      item.render(game_window.game_area())
     if self.status_msg is not None:
-      stdscr.addstr(curses.LINES // 2, (curses.COLS - len(self.status_msg)) // 2, self.status_msg)      
-    stdscr.addstr(1, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up/left/right/down to move.")
-    stdscr.addstr(4, 0, self.debug_msg())
-    stdscr.refresh()
+      height, width = game_window.status_area().getmaxyx()
+      game_window.status_area().addstr(2, (width - len(self.status_msg)) // 2, self.status_msg)
+    game_window.status_area().addstr(1, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up/left/right/down to move.")
+    game_window.status_area().addstr(3, 0, self.debug_msg())
+    game_window.status_area().hline(4, 0, '-', curses.COLS)
+    game_window.refresh(self.player.positions())
 
-  def refresh_window(self, stdscr: curses.window):
+  def refresh_window(self, game_window: GameWindow):
     try:
       self.acquire_lock()
       
@@ -469,10 +544,12 @@ class Game(object):
           self.status_msg = "Oh no! You died. :( :( Hit 'r' to restart or 'e' to exit."
           self.game_state = Game.LOST
     
-      self.render(stdscr)
+      player_location = self.player.positions()
+      game_window.game_area().center_around(player_location)
+      self.render(game_window)
 
       def task():
-        self.refresh_window(stdscr)
+        self.refresh_window(game_window)
 
       if not self.game_over():
         threading.Timer(self.speed(), task).start()
@@ -561,7 +638,7 @@ def play_game(stdscr, level):
   stdscr.clear()
 
   game = Game(load_initial_state(f"/Users/nsanch/kids-project/side-scroller-levels/level{level}.txt"), level)
-  game.refresh_window(stdscr)
+  game.refresh_window(GameWindow(stdscr))
 
   while game.game_state != Game.QUIT:
     k = stdscr.getkey()
@@ -578,13 +655,11 @@ def play_game(stdscr, level):
       elif k == 'r':
         play_game(stdscr, level=level)
         break
-      elif k == 'e':
-        break
       else:
         pass
     else:
       game.accept_keypress(k, stdscr)
  
-curses.initscr()
-curses.resizeterm(40, 100)
+#curses.initscr()
+#curses.resizeterm(40, 100)
 curses.wrapper(play_game, int(sys.argv[1]) if len(sys.argv) > 1 else 1)
