@@ -8,6 +8,8 @@ import random
 import sys
 import os
 import json
+from level_selector import LevelSelector
+from buffered_window import BufferedCenterableWindow
 
 class DebugLogger(object):
   def __init__(self):
@@ -30,65 +32,11 @@ def sign(x: int) -> int:
     return 1
   return 0
 
-class GameArea(object):
-  def __init__(self, win: curses.window):
-    self.__win = win
-    self.__buffer = {}
-
-  def clear(self):
-    self.__buffer = {}
-    self.__win.clear()
-  
-  def refresh(self, player_location: list[tuple[int, int]]):
-    max_y = max([k[0] for k in self.__buffer.keys()])
-    max_x = max([k[1] for k in self.__buffer.keys()])
-    if max_y < self.__win.getmaxyx()[0] and max_x < self.__win.getmaxyx()[1]:
-      for (y,x), ch in self.__buffer.items():
-        game_y = y
-        game_x = x
-        screen_y = self.__win.getmaxyx()[0] - game_y - 1
-        self.__win.addch(screen_y, x, ch)
-    else:
-      bottom_left, top_right = self.center_around(player_location)
-      for (y,x), ch in self.__buffer.items():
-        if y < bottom_left[0] or y >= top_right[0]:
-          continue
-        if x < bottom_left[1] or x >= top_right[1]:
-          continue
-        game_y = y - bottom_left[0]
-        game_x = x - bottom_left[1]
-        screen_y = self.__win.getmaxyx()[0] - game_y - 1
-        screen_x = game_x
-        maxyx = self.__win.getmaxyx()
-        # cannot write to bottom-right corner for some reason.
-        if screen_y == maxyx[0]-1 and screen_x == maxyx[1]-1:
-          continue
-        self.__win.addch(screen_y, screen_x, ch)
-    self.__win.refresh()
-
-  def center_around(self, player_location: list[tuple[int, int]]):
-    game_window_height, game_window_width = self.__win.getmaxyx()
-    player_min_x = min([l[1] for l in player_location])
-    player_min_y = min([l[0] for l in player_location])
-    # center the player horizontally, but vertically keep them near the bottom.
-    bottom = player_min_y - 10
-    if bottom < 0:
-      bottom = 0
-    left = player_min_x - (game_window_width // 2)
-    if left < 0:
-      left = 0
-    bottom_left = (bottom, left)
-    top_right = bottom_left[0] + game_window_height, bottom_left[1] + game_window_width
-    return bottom_left, top_right
-
-  def addch(self, y: int, x: int, ch: str) -> None:
-    self.__buffer[(y, x)] = ch
-
 class GameWindow(object):
   def __init__(self, stdscr):
     self.__stdscr = stdscr
     self.__status_area = stdscr.subwin(5, curses.COLS, 0, 0)
-    self.__game_area = GameArea(stdscr.subwin(curses.LINES - 5, curses.COLS, 5, 0))
+    self.__game_area = BufferedCenterableWindow(stdscr.subwin(curses.LINES - 5, curses.COLS, 5, 0))
 
   def status_area(self):
     return self.__status_area
@@ -110,27 +58,30 @@ class Collidable(object):
   def __init__(self):
     pass
 
-  def addch(self, stdscr: GameArea, pos: tuple[int, int], ch: str) -> None:
+  def addch(self, stdscr: BufferedCenterableWindow, pos: tuple[int, int], ch: str) -> None:
     stdscr.addch(pos[0], pos[1], ch)
 
-  def addstr(self, stdscr: GameArea, pos: tuple[int, int], s: str) -> None:
+  def addstr(self, stdscr: BufferedCenterableWindow, pos: tuple[int, int], s: str) -> None:
     for ch, i in zip(s, range(len(s))):
       self.addch(stdscr, (pos[0], pos[1] + i), ch)
 
-  def addstr_vert(self, stdscr: GameArea, pos: tuple[int, int], s: str) -> None:
+  def addstr_vert(self, stdscr: BufferedCenterableWindow, pos: tuple[int, int], s: str) -> None:
     for ch, i in zip(s, range(len(s))):
       self.addch(stdscr, (pos[0] + (len(s) - 1) - i, pos[1]), ch)
 
   def tick(self, game) -> None:
     pass
 
-  def render(self, stdscr: GameArea) -> None:
+  def render(self, stdscr: BufferedCenterableWindow) -> None:
     pass
 
   def collide(self, other_object) -> None:
     pass
 
   def kills_player_on_collision(self) -> bool:
+    return False
+  
+  def should_be_removed_from_game(self) -> bool:
     return False
 
 
@@ -203,7 +154,7 @@ class MovableObject(Collidable):
       ret.append((pos[0] + h, pos[1]))
     return ret
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     for pos, ch in zip(self.positions(), self.chars()):
       self.addch(stdscr, (pos[0], pos[1]), ch)
   
@@ -327,7 +278,7 @@ class Edamame(Collidable):
   def positions(self):
     return [self.position]
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     self.addch(stdscr, (self.position[0], self.position[1]), "E")
 
 class Brick(Collidable):
@@ -337,8 +288,35 @@ class Brick(Collidable):
   def positions(self):
     return [self.position]
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     self.addch(stdscr, self.position, "=")
+
+class BreakableBrick(Collidable):
+  def __init__(self, pos):
+    self.position = pos
+    self.chars = "+"
+    self.brokenness = 0
+    self.disappear = 0
+
+  def positions(self):
+    if self.should_be_removed_from_game():
+      return []
+    return [self.position]
+  
+  def should_be_removed_from_game(self) -> bool:
+    return self.brokenness >= 2
+  
+  def collide(self, other_object):
+    if isinstance(other_object, Player):
+      self.brokenness += 1
+
+  def render(self, stdscr: BufferedCenterableWindow):
+    if len(self.positions()) == 0:
+      return
+    if self.brokenness == 0:
+      self.addch(stdscr, self.position, "+")
+    else:
+      self.addch(stdscr, self.position, "-")
 
 class Fire(Collidable):# there should be a special fire
   def __init__(self, pos):
@@ -362,7 +340,7 @@ class Fire(Collidable):# there should be a special fire
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     self.addstr_vert(stdscr, self.position, "🔥" * self.num_fire)
 
   def kills_player_on_collision(self):
@@ -379,7 +357,7 @@ class Tree(Collidable):
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     self.addstr_vert(stdscr, self.position, self.chars)
 
   def kills_player_on_collision(self):
@@ -397,7 +375,7 @@ class EndingFlag(Collidable):
       ret.append((self.position[0] + i, self.position[1]))
     return ret
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     self.addstr_vert(stdscr, self.position, self.chars)
 
   def collide(self, other_object):
@@ -417,11 +395,12 @@ class Fireball(MovableObject):
   def kills_player_on_collision(self):
     return True
 
-class Canon(Collidable):
-  def __init__(self, pos):
+class Cannon(Collidable):
+  def __init__(self, pos, ch, direction):
     self.position = pos
-    self.chars = "/"
+    self.chars = ch
     self.tick_counter = 0
+    self.direction = direction
 
   def positions(self):
     ret = []
@@ -433,14 +412,12 @@ class Canon(Collidable):
     super().tick(game)
     self.tick_counter += 1
     if self.tick_counter % 10 == 0:
-      game.add_item(Fireball((self.position[0] + 1, self.position[1]), (2, 2)))
+      game.add_item(Fireball((self.position[0] + self.direction[0], self.position[1] + self.direction[1]), (self.direction[0]*2, self.direction[1]*2)))
 
-  def render(self, stdscr: GameArea):
+  def render(self, stdscr: BufferedCenterableWindow):
     self.addch(stdscr, self.position, self.chars)
 
 class Game(object):
-  FINAL_LEVEL = 9
-
   # game states
   RUNNING = 0
   PAUSED = 1
@@ -535,10 +512,7 @@ class Game(object):
         tick_result = self.tick()
 
         if tick_result == Game.TICK_WIN:
-          if self.level == Game.FINAL_LEVEL:
-            self.status_msg = "You win the game! Woohoo! Hit 'e' to exit or 'r' to restart."
-          else:
-            self.status_msg = "You've completed the level! Hit 'p' to play the next level, 'r' to restart or 'e' to exit."
+          self.status_msg = "You've completed the level! 's' to pick a level, 'p' for next, 'e' to exit, 'r' to restart."
           self.game_state = Game.WON
         elif tick_result == Game.TICK_LOSS:
           self.status_msg = "Oh no! You died. :( :( Hit 'r' to restart or 'e' to exit."
@@ -614,6 +588,8 @@ def load_initial_state(fname):
         pass
       elif ch == "=":
         stuff.append(Brick(game_pos))
+      elif ch == "+":
+        stuff.append(BreakableBrick(game_pos))
       elif ch == "P":
         stuff.append(Player(game_pos))
       elif ch == "E":
@@ -628,8 +604,10 @@ def load_initial_state(fname):
         stuff.append(Bird(game_pos))
       elif ch == "🔥":
         stuff.append(Fire(game_pos))
-      elif ch == "C":
-        stuff.append(Canon(game_pos))
+      elif ch == "/":
+        stuff.append(Cannon(game_pos, ch, direction=(1,1)))
+      elif ch == "\\":
+        stuff.append(Cannon(game_pos, ch, direction=(1,-1)))
 
 
   return stuff
@@ -649,8 +627,8 @@ def play_game(stdscr, level):
         else:
           play_game(stdscr, level=level)
         break
-      elif k in ['1','2','3','4','5','6','7','8','9']:
-        play_game(stdscr, level=int(k))
+      elif k == 's':
+        select_level(stdscr)
         break
       elif k == 'r':
         play_game(stdscr, level=level)
@@ -661,5 +639,10 @@ def play_game(stdscr, level):
         pass
     else:
       game.accept_keypress(k, stdscr)
+
+def select_level(stdscr):
+  level_selector = LevelSelector(stdscr, "/Users/nsanch/kids-project/side-scroller-levels")
+  selected_level = level_selector.render_and_get_selected_level()
+  play_game(stdscr, selected_level)
  
-curses.wrapper(play_game, int(sys.argv[1]) if len(sys.argv) > 1 else 1)
+curses.wrapper(select_level)

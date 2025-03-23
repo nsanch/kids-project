@@ -1,0 +1,15 @@
+[
+  {"id": 1, "description": "First Level - Like Mario, but with a cannon", "path": "level1.txt"},
+  {"id": 2, "description": "Like level 1, but with lots of bad guys", "path": "level2.txt"},
+  {"id": 3, "description": "You have to be precise for this one", "path": "level3.txt"},
+  {"id": 4, "description": "Climb these steps to victory.", "path": "level4.txt"},
+  {"id": 5, "description": "Cimb a ladder and watch out for bad guys.", "path": "level5.txt"},
+  {"id": 6, "description": "Navigate the maze!", "path": "level6.txt"},
+  {"id": 7, "description": "Fly to the flag and watch out for birds!", "path": "level7.txt"},
+  {"id": 8, "description": "Fireballs protect the flag!", "path": "level8.txt"},
+  {"id": 9, "description": "This giant level doesn't fit in the screen", "path": "level9.txt"},
+  {"id": 10, "description": "Annika designed this level with canons and ladders", "path": "level10.txt"},
+  {"id": 11, "description": "Annika designed this level with ladders and fireballs", "path": "level11.txt"},
+  {"id": 12, "description": "Annika designed this level with ladders and lots of cannons", "path": "level12.txt"},
+  {"id": 13, "description": "Break into the winner's flag", "path": "level13.txt"}
+]
