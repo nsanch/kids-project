@@ -37,16 +37,33 @@ class BufferedCenterableWindow(object):
     self.__win.refresh()
 
   def center_around(self, player_location: list[tuple[int, int]]):
+    if len(self.__buffer) == 0:
+      return (0, 0), self.__win.getmaxyx()
+
+    max_y_to_paint = max([k[0] for k in self.__buffer.keys()])
+    max_x_to_paint = max([k[1] for k in self.__buffer.keys()])
     game_window_height, game_window_width = self.__win.getmaxyx()
-    player_min_x = min([l[1] for l in player_location])
-    player_min_y = min([l[0] for l in player_location])
-    # center the player horizontally, but vertically keep them near the bottom.
-    bottom = player_min_y - 10
-    if bottom < 0:
+
+    if max_y_to_paint < game_window_height:
       bottom = 0
-    left = player_min_x - (game_window_width // 2)
-    if left < 0:
+    else:
+      # keep the player near the bottom of the screen.
+      player_min_y = min([l[0] for l in player_location])
+      bottom = player_min_y - 10
+      if bottom < 0:
+        bottom = 0
+
+    if max_x_to_paint < game_window_width:
       left = 0
+    else:
+      player_min_x = min([l[1] for l in player_location])
+      # center the player horizontally except don't show past the edge.
+      left = player_min_x - (game_window_width // 2)
+      if left < 0:
+        left = 0
+      if left + game_window_width > max_x_to_paint:
+        left = max_x_to_paint - game_window_width
+
     bottom_left = (bottom, left)
     top_right = bottom_left[0] + game_window_height, bottom_left[1] + game_window_width
     return bottom_left, top_right

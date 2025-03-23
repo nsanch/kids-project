@@ -128,6 +128,10 @@ class MovableObject(Collidable):
         self.position = next_position
       else:
         for other_item in other_items:
+          if isinstance(self, Player) and isinstance(other_item, Tree):
+            debugger.add(f"Player ran into tree at {self.position}")
+          if isinstance(other_item, Player) and isinstance(self, Tree):
+            debugger.add(f"Player ran into tree at {self.position}")
           if self == other_item:
             continue
           self.collide(other_item)
@@ -143,7 +147,7 @@ class MovableObject(Collidable):
     below_us = game.items_at([(lowest_pos[0] - 1, lowest_pos[1])])
     if len(below_us) == 0:
       self.adjust_velocity(relative_y=-1)
-    elif self.velocity[0] < 0:
+    elif self.velocity[0] < 0 and not any(map(lambda item: item.kills_player_on_collision(), below_us)):
       # there's something below us, we can't fall.
       self.adjust_velocity(new_abs_y=0)
 
@@ -159,26 +163,25 @@ class MovableObject(Collidable):
       self.addch(stdscr, (pos[0], pos[1]), ch)
   
   def collide(self, other_object):
-    if isinstance(other_object, Brick):
-      # literally ran into a wall, stop
-      stop_in_y = False
-      stop_in_x = False
-      for self_p in self.positions():
-        for other_p in other_object.positions():
-          y_delta = other_p[0] - self_p[0]
-          x_delta = other_p[1] - self_p[1]
-          if (x_delta == 0 and
-              ((0 < y_delta <= self.velocity[0]) or
-               (0 > y_delta >= self.velocity[0]))):
-            stop_in_y = True
-          if (y_delta == 0 and 
-              ((0 < x_delta <= self.velocity[1]) or
-               (0 > x_delta >= self.velocity[1]))):
-            stop_in_x = True
-      if stop_in_y:
-        self.adjust_velocity(new_abs_y=0)
-      if stop_in_x:
-        self.adjust_velocity(new_abs_x=0)
+    # literally ran into a wall, stop
+    stop_in_y = False
+    stop_in_x = False
+    for self_p in self.positions():
+      for other_p in other_object.positions():
+        y_delta = other_p[0] - self_p[0]
+        x_delta = other_p[1] - self_p[1]
+        if (x_delta == 0 and
+            ((0 < y_delta <= self.velocity[0]) or
+              (0 > y_delta >= self.velocity[0]))):
+          stop_in_y = True
+        if (y_delta == 0 and 
+            ((0 < x_delta <= self.velocity[1]) or
+              (0 > x_delta >= self.velocity[1]))):
+          stop_in_x = True
+    if stop_in_y:
+      self.adjust_velocity(new_abs_y=0)
+    if stop_in_x:
+      self.adjust_velocity(new_abs_x=0)
 
 class LittleBadGuy(MovableObject):
   def __init__(self, initial_pos):
@@ -193,7 +196,10 @@ class LittleBadGuy(MovableObject):
     self.last_reversal += 1
     if self.last_reversal > 10:
       self.last_reversal = 0
-      self.velocity = (self.velocity[0], -1 * self.velocity[1])
+      if self.velocity == (0,0):
+        self.velocity = (0, random.choice([-1, 1]))
+      else:
+        self.velocity = (self.velocity[0], -1 * self.velocity[1])
 
   def chars(self):
     return "bb"
@@ -412,7 +418,7 @@ class Cannon(Collidable):
     super().tick(game)
     self.tick_counter += 1
     if self.tick_counter % 10 == 0:
-      game.add_item(Fireball((self.position[0] + self.direction[0], self.position[1] + self.direction[1]), (self.direction[0]*2, self.direction[1]*2)))
+      game.add_item(Fireball((self.position[0] + self.direction[0], self.position[1] + self.direction[1]), (self.direction[0], self.direction[1])))
 
   def render(self, stdscr: BufferedCenterableWindow):
     self.addch(stdscr, self.position, self.chars)
@@ -483,6 +489,7 @@ class Game(object):
     
     for item in self.items:
       item.tick(self)
+
     
     if self.ending_flag.had_collision:
       return Game.TICK_WIN
