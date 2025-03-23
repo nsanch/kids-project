@@ -655,11 +655,11 @@ def play_game(stdscr, level):
       elif k == 'r':
         play_game(stdscr, level=level)
         break
+      elif k == 'e':
+        break
       else:
         pass
     else:
       game.accept_keypress(k, stdscr)
  
-#curses.initscr()
-#curses.resizeterm(40, 100)
 curses.wrapper(play_game, int(sys.argv[1]) if len(sys.argv) > 1 else 1)
