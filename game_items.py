@@ -310,10 +310,11 @@ class Edamame(GameObject):
   def render(self, stdscr: BufferedCenterableWindow):
     self.addch(stdscr, (self.position[0], self.position[1]), "E")
 
-class WeaponHolder(GameObject):
-  def __init__(self, pos):
+class ItemHolder(GameObject):
+  def __init__(self, pos, item):
     super().__init__()
     self.position = pos
+    self.item = item
 
   def positions(self):
     return [self.position]
@@ -326,7 +327,7 @@ class WeaponHolder(GameObject):
 
   def grant_item(self) -> InventoryItem:
     self.signal_removal_from_game()
-    return ShootsFireballs()
+    return self.item
 
 class Brick(GameObject):
   def __init__(self, pos):
@@ -446,6 +447,12 @@ class Fireball(MovableObject):
     if self.lifetime <= 0:
       self.signal_removal_from_game()
 
+  def collide(self, other_object):
+    super().collide(other_object)
+    if self.kills_on_collision(other_object):
+      # leave it on-screen for a tick, then remove it.
+      self.lifetime = 2
+
   def experiences_gravity(self):
     return False
 
@@ -562,7 +569,7 @@ def get_game_object_for_name(ch: str, game_pos: tuple[int, int]) -> GameObject|N
   elif ch == "L":
     return Fireline(game_pos)
   elif ch == "H":
-    return WeaponHolder(game_pos)
+    return ItemHolder(game_pos, ShootsFireballs())
   elif ch == "/":
     return Cannon(game_pos, ch, direction=(1,1))
   elif ch == "\\":
