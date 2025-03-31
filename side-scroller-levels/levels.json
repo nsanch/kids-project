@@ -11,5 +11,7 @@
   {"id": 10, "description": "Annika designed this level with canons and ladders", "path": "level10.txt"},
   {"id": 11, "description": "Annika designed this level with ladders and fireballs", "path": "level11.txt"},
   {"id": 12, "description": "Annika designed this level with ladders and lots of cannons", "path": "level12.txt"},
-  {"id": 13, "description": "Break into the winner's flag", "path": "level13.txt"}
+  {"id": 13, "description": "Break into the winner's flag", "path": "level13.txt"},
+  {"id": 14, "description": "Beat a big bad guy and break into the winner's flag", "path": "level14.txt"},
+  {"id": 15, "description": "Kieran Mad this Level and it is Hard", "path": "level15.txt"}
 ]

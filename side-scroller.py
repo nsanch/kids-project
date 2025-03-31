@@ -100,12 +100,12 @@ class Game(object):
     self.items.append(item)
   
   def debug_msg(self):
-    return ""
-    #x = []
-    #for item in self.items:
-    #  if isinstance(item, MovableObject):
-    #    x.append(f"Pos: {item.position}, Vel: {item.velocity}")
-    #return "|".join(x) + debugger.get_log_str()
+    #return ""
+    x = []
+    item = self.player
+    if isinstance(item, MovableObject):
+      x.append(f"Pos: {item.position}, Vel: {item.velocity}")
+    return "|".join(x) + debugger.get_log_str()
 
   def tick(self):
     if self.game_over():
@@ -114,13 +114,13 @@ class Game(object):
     
     for item in self.items:
       item.tick(self)
-    self.items = [i for i in self.items if not i.should_be_removed_from_game()]
+    self.items = [i for i in self.items if not i.should_be_removed_from_game() or i == self.player]
 
     
     if self.ending_flag.had_collision:
       return Game.TICK_WIN
     
-    if self.player.is_dead:
+    if self.player.should_be_removed_from_game():
       return Game.TICK_LOSS
 
     return Game.TICK_CONTINUING
@@ -190,6 +190,8 @@ class Game(object):
           self.status_msg = "Game paused. Press 'p' to continue."
       elif k == " " or k == "KEY_UP":
         self.player.jump()
+      elif k == "f":
+        self.player.fire(self)
       elif k == "KEY_RIGHT":
         self.player.right()
       elif k == "KEY_LEFT":
