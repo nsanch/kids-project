@@ -48,6 +48,9 @@ class GameWindow(object):
     self.status_area().refresh()
     self.__stdscr.refresh()
 
+  def repaint(self):
+    self.game_area().repaint()
+
 class Game(object):
   # game states
   RUNNING = 0
@@ -131,7 +134,8 @@ class Game(object):
       item.render(game_window.game_area())
     if self.status_msg is not None:
       height, width = game_window.status_area().getmaxyx()
-      game_window.status_area().addstr(2, (width - len(self.status_msg)) // 2, self.status_msg)
+      avail_width = width - ((width - len(self.status_msg)) // 2)
+      game_window.status_area().addstr(2, (width - len(self.status_msg)) // 2, self.status_msg[:avail_width-1])
     game_window.status_area().addstr(1, 0, "Type 'e' to exit. 'r' to restart. 'p' to pause. Up/left/right/down to move.")
     game_window.status_area().addstr(3, 0, self.debug_msg())
     game_window.status_area().hline(4, 0, '-', curses.COLS)
@@ -225,15 +229,22 @@ def load_initial_state(fname):
 
   return stuff
 
-def play_game(stdscr, level):
+def play_game(stdscr: curses.window, level: int):
   stdscr.clear()
 
   game = Game(load_initial_state(f"/Users/nsanch/kids-project/side-scroller-levels/level{level}.txt"), level)
-  game.refresh_window(GameWindow(stdscr))
+  game_window = GameWindow(stdscr)
+  game.refresh_window(game_window)
 
   while game.game_state != Game.QUIT:
-    k = stdscr.getkey()
-    if game.game_over():
+    k = None
+    try:
+      k = stdscr.getkey()
+    except curses.error:
+      pass
+    if k == "KEY_RESIZE":
+      game_window.repaint()
+    elif game.game_over():
       if k == 'p':
         if game.game_state == Game.WON:
           play_game(stdscr, level=level + 1)

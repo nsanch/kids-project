@@ -4,12 +4,18 @@ class BufferedCenterableWindow(object):
   def __init__(self, win: curses.window):
     self.__win = win
     self.__buffer = {}
+    self.__last_player_location: list[tuple[int, int]] = [(0,0)]
 
   def clear(self):
     self.__buffer = {}
     self.__win.clear()
+
+  def repaint(self):
+    self.__win.clear()
+    self.refresh(self.__last_player_location)
   
   def refresh(self, player_location: list[tuple[int, int]]):
+    self.__last_player_location = player_location
     max_y = max([k[0] for k in self.__buffer.keys()])
     max_x = max([k[1] for k in self.__buffer.keys()])
     if max_y < self.__win.getmaxyx()[0] and max_x < self.__win.getmaxyx()[1]:

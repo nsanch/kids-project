@@ -24,6 +24,9 @@ class InventoryItem(object):
   def fire(self, game, shooter):
     pass
 
+  def should_be_removed(self) -> bool:
+    return False
+
 class GameObject(object):
   def __init__(self):
     self.should_be_removed: bool = False
@@ -248,26 +251,21 @@ class Bird(MovableObject):
 
 class Player(MovableObject):
   CHARS = "MM"
-  MEGA_CHARS = "MMM"
 
   def __init__(self, pos):
     super().__init__(pos, (0, 0))
 
-    self.is_little = True
     self.is_dead = False
     self.items = []
 
   def experiences_gravity(self):
     return True
   
-  def toggle_mega(self):
-    self.is_little = not self.is_little
-
   def chars(self):
-    if self.is_little:
-      return Player.CHARS
+    if self.has_speed_boost():
+      return "L" * len(Player.CHARS)
     else:
-      return Player.MEGA_CHARS
+      return Player.CHARS
     
   def tick(self, game):
     super().tick(game)
@@ -277,19 +275,31 @@ class Player(MovableObject):
       item.fire(game, self)
 
   def jump(self):
-    if self.is_little:
-      self.adjust_velocity(new_abs_y=3)
-    else:
-      self.adjust_velocity(new_abs_y=5)
+    if self.has_speed_boost():
+      self.adjust_velocity(relative_y=6)
+    else: 
+      self.adjust_velocity(relative_y=3)
+
+  def has_speed_boost(self) -> bool:
+    return any(map(lambda item: isinstance(item, SpeedBoost), self.items))
 
   def right(self):
-    self.adjust_velocity(relative_x=1)
+    if self.has_speed_boost():
+      self.adjust_velocity(relative_x=2)
+    else: 
+      self.adjust_velocity(relative_x=1)
 
   def left(self):
-    self.adjust_velocity(relative_x=-1)
+    if self.has_speed_boost():
+      self.adjust_velocity(relative_x=-2)
+    else: 
+      self.adjust_velocity(relative_x=-1)
 
   def down(self):
-    self.adjust_velocity(relative_y=-2)
+    if self.has_speed_boost():
+      self.adjust_velocity(relative_y=-4)
+    else: 
+      self.adjust_velocity(relative_y=-2)
 
   def accept_item(self, item: InventoryItem) -> None:
     self.items.append(item)
@@ -298,6 +308,16 @@ class Player(MovableObject):
     super().collide(other_object)
     if isinstance(other_object, Edamame):
       self.is_little = False
+
+class SpeedBoost(InventoryItem):
+  def __init__(self):
+    self.start_time = time.time()
+    self.duration = 30
+
+  def should_be_removed(self):
+    if time.time() - self.start_time > self.duration:
+      return True
+    return False
 
 class Edamame(GameObject):
   def __init__(self, pos):
@@ -309,6 +329,13 @@ class Edamame(GameObject):
 
   def render(self, stdscr: BufferedCenterableWindow):
     self.addch(stdscr, (self.position[0], self.position[1]), "E")
+
+  def grants_item(self) -> bool:
+    return True
+
+  def grant_item(self) -> InventoryItem:
+    self.signal_removal_from_game()
+    return SpeedBoost()
 
 class ItemHolder(GameObject):
   def __init__(self, pos, item):
@@ -328,6 +355,8 @@ class ItemHolder(GameObject):
   def grant_item(self) -> InventoryItem:
     self.signal_removal_from_game()
     return self.item
+
+
 
 class Brick(GameObject):
   def __init__(self, pos):
